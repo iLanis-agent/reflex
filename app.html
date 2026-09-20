@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Reflex - reaction time test</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,'Segoe UI',Roboto,sans-serif; background:#0e0f1e; color:#ecedff; min-height:100vh; display:flex; flex-direction:column; }
+  .head { padding:16px 14px 10px; text-align:center; }
+  .head h1 { font-size:24px; display:inline; }
+  .head .round { color:#7d83c0; font-size:12px; margin-top:4px; }
+  .head a { color:#8b7cff; text-decoration:none; font-size:12px; margin-left:10px; }
+  #pad { flex:1; min-height:64vh; margin:10px 14px 20px; border-radius:18px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; cursor:pointer; user-select:none; text-align:center; padding:20px; transition:background .08s; touch-action:manipulation; }
+  #pad.idle { background:#1d2044; }
+  #pad.wait { background:#7f1d3a; }
+  #pad.go { background:#0e7a5f; }
+  #pad.result { background:#1d2044; }
+  #pad.foul { background:#b45309; }
+  #pad .big { font-size:34px; font-weight:800; }
+  #pad .sub { color:#ecedff; opacity:.75; font-size:14px; max-width:340px; line-height:1.5; }
+  #pad .ms { font-size:56px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .strip { display:flex; gap:6px; justify-content:center; margin:0 14px 12px; min-height:34px; }
+  .dot { min-width:52px; padding:5px 4px; border-radius:8px; background:#151730; border:1px solid #252852; font-size:12px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; }
+  .dot.cur { border-color:#8b7cff; }
+  #summary { margin:0 14px 20px; display:none; }
+  #summary .card { background:#151730; border:1px solid #252852; border-radius:14px; padding:18px; text-align:center; }
+  #summary .avg { font-size:52px; font-weight:800; font-variant-numeric:tabular-nums; }
+  #summary .rating { font-size:18px; font-weight:700; margin-top:2px; }
+  #summary .note { color:#7d83c0; font-size:12.5px; margin-top:6px; }
+  #summary .row { display:flex; justify-content:center; gap:18px; margin-top:14px; font-size:13px; color:#aab0e8; flex-wrap:wrap; }
+  #summary .row b { color:#ecedff; }
+  #again { margin-top:16px; background:#8b7cff; border:none; color:#0e0f1e; font-weight:700; border-radius:999px; padding:11px 26px; font-size:14px; cursor:pointer; }
+  #bestLine { text-align:center; color:#5b5f96; font-size:11.5px; margin-bottom:14px; }
+</style>
+</head>
+<body>
+<div class="head"><h1>&#9889; Reflex</h1><a href="index.html">about</a><div class="round" id="roundLabel"></div></div>
+<div id="pad" class="idle">
+  <div class="big" id="big">Tap to start</div>
+  <div class="sub" id="sub">5 rounds. Wait for green, then tap as fast as you can. Tap too early and the round restarts.</div>
+</div>
+<div class="strip" id="strip"></div>
+<div id="bestLine"></div>
+<div id="summary">
+  <div class="card">
+    <div style="font-size:11px;color:#7d83c0;text-transform:uppercase;letter-spacing:1.5px">average reaction</div>
+    <div class="avg" id="avgMs">-</div>
+    <div class="rating" id="rating"></div>
+    <div class="note" id="ratingNote"></div>
+    <div class="row" id="statRow"></div>
+    <button id="again">Go again</button>
+  </div>
+</div>
+<script src="engine.js"></script>
+<script>
+var ROUNDS=5, BEST_KEY='reflex-best-avg-v1';
+var state='idle', times=[], t0=0, timer=null;
+function $(id){return document.getElementById(id);}
+function setPad(cls,big,sub){
+  $('pad').className=cls;
+  var b=$('big');
+  b.className=(cls==='result')?'ms':'big';
+  b.textContent=big;
+  $('sub').textContent=sub||'';
+}
+function bestAvg(){ try{return +localStorage.getItem(BEST_KEY)||null;}catch(_){return null;} }
+function saveBest(v){ try{localStorage.setItem(BEST_KEY,String(v));}catch(_){}}
+function renderStrip(){
+  var s='';
+  for(var i=0;i<ROUNDS;i++){
+    s+='<div class="dot'+(i===times.length?' cur':'')+'">'+(times[i]!==undefined?times[i]+'ms':(i+1))+'</div>';
+  }
+  $('strip').innerHTML=s;
+}
+function renderBest(){
+  var b=bestAvg();
+  $('bestLine').textContent=b?('best average: '+b+'ms'):'';
+}
+function start(){
+  times=[];
+  $('summary').style.display='none';
+  $('pad').style.display='flex';
+  nextRound();
+}
+function nextRound(){
+  renderStrip();
+  $('roundLabel').textContent='round '+(times.length+1)+' of '+ROUNDS;
+  state='wait';
+  setPad('wait','Wait for green...','');
+  var delay=1200+Math.random()*2800;
+  timer=setTimeout(function(){
+    state='go'; t0=performance.now();
+    setPad('go','TAP!','');
+  },delay);
+}
+function foul(){
+  clearTimeout(timer);
+  state='foul';
+  setPad('foul','Too soon!','Tap to redo this round.');
+}
+function hit(){
+  var ms=Math.round(performance.now()-t0);
+  times.push(ms);
+  state='result';
+  setPad('result',ms+'ms', times.length<ROUNDS?'Tap for round '+(times.length+1):'Tap for your results');
+  renderStrip();
+}
+function finish(){
+  var s=stats(times);
+  var r=rating(s.avg);
+  var p=percentile(s.avg);
+  $('pad').style.display='none';
+  $('roundLabel').textContent='done';
+  $('summary').style.display='block';
+  $('avgMs').textContent=s.avg+'ms';
+  $('rating').textContent=r.label;
+  $('ratingNote').textContent=r.note+' You beat about '+p+'% of people.';
+  $('statRow').innerHTML='<span>best <b>'+s.best+'ms</b></span><span>median <b>'+s.median+'ms</b></span><span>worst <b>'+s.worst+'ms</b></span>';
+  var b=bestAvg();
+  if(!b||s.avg<b){ saveBest(s.avg); $('ratingNote').textContent+=' New best average!'; }
+  renderBest();
+}
+function tap(){
+  if(state==='idle'){ start(); }
+  else if(state==='wait'){ foul(); }
+  else if(state==='foul'){ nextRound(); }
+  else if(state==='go'){ hit(); }
+  else if(state==='result'){ if(times.length<ROUNDS) nextRound(); else finish(); }
+}
+$('pad').addEventListener('pointerdown',function(e){ e.preventDefault(); tap(); });
+$('again').addEventListener('click',function(){ state='idle'; start(); });
+document.addEventListener('keydown',function(e){
+  if(e.code==='Space'){ e.preventDefault(); if($('summary').style.display==='block'){ state='idle'; start(); } else tap(); }
+});
+renderStrip(); renderBest();
+</script>
+</body>
+</html>
